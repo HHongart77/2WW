@@ -1,0 +1,420 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>나이 계산기</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;600;700&display=swap');
+    body { font-family: 'Noto Sans KR', sans-serif; }
+    .gradient-bg {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    }
+    .card-shadow {
+      box-shadow: 0 10px 40px rgba(0, 0, 0, 0.12);
+    }
+    .result-card {
+      backdrop-filter: blur(10px);
+      background: rgba(255, 255, 255, 0.95);
+    }
+    @keyframes fadeInUp {
+      from { opacity: 0; transform: translateY(20px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .animate-fade-in-up {
+      animation: fadeInUp 0.5s ease-out forwards;
+    }
+    .animate-delay-1 { animation-delay: 0.1s; opacity: 0; }
+    .animate-delay-2 { animation-delay: 0.2s; opacity: 0; }
+    .animate-delay-3 { animation-delay: 0.3s; opacity: 0; }
+    .animate-delay-4 { animation-delay: 0.4s; opacity: 0; }
+    .animate-delay-5 { animation-delay: 0.5s; opacity: 0; }
+    .animate-delay-6 { animation-delay: 0.6s; opacity: 0; }
+  </style>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            primary: { 50: '#f0f0ff', 100: '#e0e0ff', 500: '#667eea', 600: '#5a6fd6', 700: '#4c5ec2' },
+            accent: { 500: '#764ba2', 600: '#6a4292' }
+          }
+        }
+      }
+    }
+  </script>
+</head>
+<body class="min-h-screen gradient-bg">
+  <div id="root"></div>
+  <script type="text/babel">
+    const { useState, useMemo, useCallback } = React;
+
+    // ========================================
+    // 🎨 Design System Components
+    // ========================================
+
+    function Button({ children, onClick, variant = 'primary', size = 'md', disabled = false, className = '' }) {
+      const baseClasses = 'font-semibold rounded-xl transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 active:scale-95';
+      const variants = {
+        primary: 'bg-gradient-to-r from-primary-500 to-accent-500 text-white hover:from-primary-600 hover:to-accent-600 focus:ring-primary-500 shadow-lg hover:shadow-xl',
+        secondary: 'bg-gray-100 text-gray-700 hover:bg-gray-200 focus:ring-gray-400',
+        ghost: 'bg-transparent text-gray-600 hover:bg-gray-100 focus:ring-gray-400',
+      };
+      const sizes = {
+        sm: 'px-4 py-2 text-sm',
+        md: 'px-6 py-3 text-base',
+        lg: 'px-8 py-4 text-lg',
+      };
+      return (
+        <button
+          onClick={onClick}
+          disabled={disabled}
+          className={`${baseClasses} ${variants[variant]} ${sizes[size]} ${disabled ? 'opacity-50 cursor-not-allowed' : ''} ${className}`}
+        >
+          {children}
+        </button>
+      );
+    }
+
+    function Select({ label, value, onChange, options, className = '' }) {
+      return (
+        <div className={`flex flex-col ${className}`}>
+          {label && <label className="text-sm font-medium text-gray-600 mb-1.5">{label}</label>}
+          <select
+            value={value}
+            onChange={onChange}
+            className="px-4 py-3 rounded-xl border-2 border-gray-200 bg-white text-gray-800 focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 focus:outline-none transition-all duration-200 appearance-none cursor-pointer"
+          >
+            {options.map(opt => (
+              <option key={opt.value} value={opt.value}>{opt.label}</option>
+            ))}
+          </select>
+        </div>
+      );
+    }
+
+    function Card({ children, className = '' }) {
+      return (
+        <div className={`bg-white rounded-2xl card-shadow p-6 ${className}`}>
+          {children}
+        </div>
+      );
+    }
+
+    function ResultItem({ icon, label, value, subValue, className = '' }) {
+      return (
+        <div className={`result-card rounded-2xl p-5 border border-gray-100 hover:border-primary-500/30 transition-all duration-300 hover:shadow-md ${className}`}>
+          <div className="flex items-start gap-4">
+            <div className="text-3xl flex-shrink-0 mt-0.5">{icon}</div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium text-gray-400 mb-1">{label}</p>
+              <p className="text-xl font-bold text-gray-800 leading-tight">{value}</p>
+              {subValue && <p className="text-sm text-gray-500 mt-1">{subValue}</p>}
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // ========================================
+    // 🧮 Calculation Helpers
+    // ========================================
+
+    function calcAge(birthDate, today) {
+      let age = today.getFullYear() - birthDate.getFullYear();
+      const monthDiff = today.getMonth() - birthDate.getMonth();
+      if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
+        age--;
+      }
+      return Math.max(age, 0);
+    }
+
+    function calcKoreanAge(birthDate, today) {
+      return today.getFullYear() - birthDate.getFullYear() + 1;
+    }
+
+    function calcDaysAlive(birthDate, today) {
+      const diff = today.getTime() - birthDate.getTime();
+      return Math.floor(diff / (1000 * 60 * 60 * 24)) + 1;
+    }
+
+    function calcDaysUntilBirthday(birthDate, today) {
+      const thisYearBirthday = new Date(today.getFullYear(), birthDate.getMonth(), birthDate.getDate());
+      if (thisYearBirthday.getTime() < today.getTime()) {
+        thisYearBirthday.setFullYear(today.getFullYear() + 1);
+      }
+      const diff = thisYearBirthday.getTime() - today.getTime();
+      return Math.ceil(diff / (1000 * 60 * 60 * 24));
+    }
+
+    function getZodiacAnimal(year) {
+      const animals = [
+        { name: '원숭이', emoji: '🐒' },
+        { name: '닭', emoji: '🐓' },
+        { name: '개', emoji: '🐕' },
+        { name: '돼지', emoji: '🐷' },
+        { name: '쥐', emoji: '🐭' },
+        { name: '소', emoji: '🐮' },
+        { name: '호랑이', emoji: '🐯' },
+        { name: '토끼', emoji: '🐰' },
+        { name: '용', emoji: '🐲' },
+        { name: '뱀', emoji: '🐍' },
+        { name: '말', emoji: '🐴' },
+        { name: '양', emoji: '🐑' },
+      ];
+      return animals[year % 12];
+    }
+
+    function getConstellation(month, day) {
+      const constellations = [
+        { name: '염소자리', emoji: '♑', start: [1, 1], end: [1, 19] },
+        { name: '물병자리', emoji: '♒', start: [1, 20], end: [2, 18] },
+        { name: '물고기자리', emoji: '♓', start: [2, 19], end: [3, 20] },
+        { name: '양자리', emoji: '♈', start: [3, 21], end: [4, 19] },
+        { name: '황소자리', emoji: '♉', start: [4, 20], end: [5, 20] },
+        { name: '쌍둥이자리', emoji: '♊', start: [5, 21], end: [6, 21] },
+        { name: '게자리', emoji: '♋', start: [6, 22], end: [7, 22] },
+        { name: '사자자리', emoji: '♌', start: [7, 23], end: [8, 22] },
+        { name: '처녀자리', emoji: '♍', start: [8, 23], end: [9, 22] },
+        { name: '천칭자리', emoji: '♎', start: [9, 23], end: [10, 22] },
+        { name: '전갈자리', emoji: '♏', start: [10, 23], end: [11, 21] },
+        { name: '궁수자리', emoji: '♐', start: [11, 22], end: [12, 21] },
+        { name: '염소자리', emoji: '♑', start: [12, 22], end: [12, 31] },
+      ];
+      for (const c of constellations) {
+        const [sm, sd] = c.start;
+        const [em, ed] = c.end;
+        if ((month === sm && day >= sd) || (month === em && day <= ed)) {
+          return c;
+        }
+      }
+      return constellations[0];
+    }
+
+    function getDayOfWeek(date) {
+      const days = ['일요일', '월요일', '화요일', '수요일', '목요일', '금요일', '토요일'];
+      return days[date.getDay()];
+    }
+
+    // ========================================
+    // 📄 App Component
+    // ========================================
+
+    function App() {
+      const today = new Date();
+      const currentYear = today.getFullYear();
+
+      const [year, setYear] = useState('');
+      const [month, setMonth] = useState('');
+      const [day, setDay] = useState('');
+      const [result, setResult] = useState(null);
+      const [error, setError] = useState('');
+
+      const yearOptions = [
+        { value: '', label: '년도' },
+        ...Array.from({ length: 120 }, (_, i) => {
+          const y = currentYear - i;
+          return { value: String(y), label: `${y}년` };
+        })
+      ];
+
+      const monthOptions = [
+        { value: '', label: '월' },
+        ...Array.from({ length: 12 }, (_, i) => ({
+          value: String(i + 1), label: `${i + 1}월`
+        }))
+      ];
+
+      const dayOptions = useMemo(() => {
+        const maxDay = year && month ? new Date(Number(year), Number(month), 0).getDate() : 31;
+        return [
+          { value: '', label: '일' },
+          ...Array.from({ length: maxDay }, (_, i) => ({
+            value: String(i + 1), label: `${i + 1}일`
+          }))
+        ];
+      }, [year, month]);
+
+      const handleCalculate = useCallback(() => {
+        setError('');
+        setResult(null);
+
+        if (!year || !month || !day) {
+          setError('생년월일을 모두 선택해주세요.');
+          return;
+        }
+
+        const birthDate = new Date(Number(year), Number(month) - 1, Number(day));
+        if (birthDate > today) {
+          setError('미래의 날짜는 입력할 수 없습니다.');
+          return;
+        }
+
+        const internationalAge = calcAge(birthDate, today);
+        const koreanAge = calcKoreanAge(birthDate, today);
+        const daysAlive = calcDaysAlive(birthDate, today);
+        const daysUntilBirthday = calcDaysUntilBirthday(birthDate, today);
+        const zodiac = getZodiacAnimal(Number(year));
+        const constellation = getConstellation(Number(month), Number(day));
+        const birthDayOfWeek = getDayOfWeek(birthDate);
+        const isBirthdayToday = daysUntilBirthday === 0 || daysUntilBirthday === 365 || daysUntilBirthday === 366;
+
+        setResult({
+          internationalAge,
+          koreanAge,
+          daysAlive,
+          daysUntilBirthday: isBirthdayToday ? 0 : daysUntilBirthday,
+          zodiac,
+          constellation,
+          birthDayOfWeek,
+          birthDateStr: `${year}년 ${month}월 ${day}일 (${birthDayOfWeek})`,
+          isBirthdayToday,
+        });
+      }, [year, month, day]);
+
+      const handleReset = useCallback(() => {
+        setYear('');
+        setMonth('');
+        setDay('');
+        setResult(null);
+        setError('');
+      }, []);
+
+      return (
+        <div className="min-h-screen py-8 px-4 sm:px-6">
+          <div className="max-w-2xl mx-auto">
+            {/* Header */}
+            <div className="text-center mb-8">
+              <h1 className="text-3xl sm:text-4xl font-bold text-white mb-2 drop-shadow-lg">
+                나이 계산기
+              </h1>
+              <p className="text-white/80 text-sm sm:text-base">
+                생년월일을 입력하면 다양한 정보를 알려드립니다
+              </p>
+            </div>
+
+            {/* Input Card */}
+            <Card className="mb-6">
+              <h2 className="text-lg font-bold text-gray-800 mb-4">생년월일 입력</h2>
+              <div className="grid grid-cols-3 gap-3 mb-4">
+                <Select
+                  label="년"
+                  value={year}
+                  onChange={e => setYear(e.target.value)}
+                  options={yearOptions}
+                />
+                <Select
+                  label="월"
+                  value={month}
+                  onChange={e => setMonth(e.target.value)}
+                  options={monthOptions}
+                />
+                <Select
+                  label="일"
+                  value={day}
+                  onChange={e => { if (Number(e.target.value) <= (dayOptions.length - 1)) setDay(e.target.value); }}
+                  options={dayOptions}
+                />
+              </div>
+
+              {error && (
+                <div className="mb-4 px-4 py-3 bg-red-50 border border-red-200 rounded-xl text-red-600 text-sm font-medium">
+                  {error}
+                </div>
+              )}
+
+              <div className="flex gap-3">
+                <Button onClick={handleCalculate} size="lg" className="flex-1">
+                  계산하기
+                </Button>
+                {result && (
+                  <Button onClick={handleReset} variant="secondary" size="lg">
+                    초기화
+                  </Button>
+                )}
+              </div>
+            </Card>
+
+            {/* Results */}
+            {result && (
+              <div className="space-y-4">
+                {/* Birth info */}
+                <div className="animate-fade-in-up animate-delay-1">
+                  <ResultItem
+                    icon="📅"
+                    label="생년월일"
+                    value={result.birthDateStr}
+                    subValue={result.isBirthdayToday ? '🎂 오늘이 생일입니다! 축하합니다!' : null}
+                  />
+                </div>
+
+                {/* Ages */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 animate-fade-in-up animate-delay-2">
+                  <ResultItem
+                    icon="🎯"
+                    label="만 나이"
+                    value={`${result.internationalAge}세`}
+                    subValue="국제 표준 나이"
+                  />
+                  <ResultItem
+                    icon="🇰🇷"
+                    label="세는 나이"
+                    value={`${result.koreanAge}세`}
+                    subValue="한국식 전통 나이"
+                  />
+                </div>
+
+                {/* Days */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 animate-fade-in-up animate-delay-3">
+                  <ResultItem
+                    icon="⏳"
+                    label="태어난 지"
+                    value={`${result.daysAlive.toLocaleString()}일째`}
+                    subValue={`약 ${Math.floor(result.daysAlive / 7).toLocaleString()}주`}
+                  />
+                  <ResultItem
+                    icon={result.isBirthdayToday ? '🎂' : '🎁'}
+                    label="다음 생일까지"
+                    value={result.isBirthdayToday ? '오늘이 생일!' : `${result.daysUntilBirthday}일 남음`}
+                    subValue={result.isBirthdayToday ? null : `${result.internationalAge + 1}세 생일`}
+                  />
+                </div>
+
+                {/* Zodiac & Constellation */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 animate-fade-in-up animate-delay-4">
+                  <ResultItem
+                    icon={result.zodiac.emoji}
+                    label="띠 (12간지)"
+                    value={`${result.zodiac.name}띠`}
+                    subValue={`${year}년생`}
+                  />
+                  <ResultItem
+                    icon={result.constellation.emoji}
+                    label="별자리"
+                    value={result.constellation.name}
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* Footer */}
+            <div className="text-center mt-8 text-white/50 text-xs">
+              <p>오늘 날짜 기준: {currentYear}년 {today.getMonth() + 1}월 {today.getDate()}일</p>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // ========================================
+    // 🚀 Rendering
+    // ========================================
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  </script>
+</body>
+</html>
